@@ -1,4 +1,4 @@
-name: Build Pixel 16 M34 (Fixed Syntax)
+name: Build Pixel 16 M34 (Final Fix)
 on:
   workflow_dispatch:
     inputs:
@@ -8,7 +8,7 @@ on:
         default: 'https://sourceforge.net/projects/mystic-gsi-updates/files/Pixel/Pixel-cheetah-16-14089870-AB-20251002-MysticGSI.zip/download'
 
 jobs:
-  build_pixel_fixed:
+  build_pixel_final:
     runs-on: ubuntu-latest
     steps:
       - name: 1. Setup Tools
@@ -20,17 +20,32 @@ jobs:
           wget https://raw.githubusercontent.com/xpirt/sdat2img/master/sdat2img.py
           chmod +x sdat2img.py
 
-      - name: 2. Download GSI
+      - name: 2. Download & Prepare GSI (FIXED LOGIC)
         run: |
           mkdir work
           cd work
           wget -O rom.zip "${{ inputs.gsi_url }}"
           unzip rom.zip
-          mv $(find . -name "*.img" | head -n 1) system.img
+          
+          # --- FIX START ---
+          # Find the IMG file
+          FOUND_IMG=$(find . -maxdepth 1 -name "*.img" | head -n 1)
+          
+          if [ "$FOUND_IMG" == "./system.img" ] || [ "$FOUND_IMG" == "system.img" ]; then
+             echo "File is already named system.img. Skipping rename."
+          else
+             echo "Renaming $FOUND_IMG to system.img"
+             mv "$FOUND_IMG" system.img
+          fi
+          # --- FIX END ---
+
+          # Check for Sparse format
           if file system.img | grep -q "sparse"; then
+            echo "Converting Sparse Image..."
             simg2img system.img system_raw.img
             rm system.img
           else
+            echo "Image is already Raw."
             mv system.img system_raw.img
           fi
 
@@ -46,15 +61,13 @@ jobs:
           sudo rm -rf $S_DIR/app/PhhTrebleApp
           sudo rm -rf $S_DIR/priv-app/Updater
 
-      - name: 5. Inject Overlay (AUTO-DETECT)
+      - name: 5. Inject Overlay (AUTO)
         run: |
-          # Clean URL without brackets
           git clone https://github.com/phoenixeditz1357-cmd/M34-Overlays overlay_repo
-          
           OVERLAY_APK=$(find overlay_repo -name "*.apk" | head -n 1)
           
           if [ -f "$OVERLAY_APK" ]; then
-             echo "Found: $OVERLAY_APK"
+             echo "Found Overlay: $OVERLAY_APK"
              TARGET="work/mnt/system/product/overlay"
              if [ ! -d "$TARGET" ]; then TARGET="work/mnt/system/system/product/overlay"; fi
              
@@ -63,11 +76,10 @@ jobs:
              sudo chmod 644 "$TARGET/treble-overlay-samsung-m34x.apk"
              echo "Overlay Injected!"
           else
-             echo "WARNING: No Overlay Found in Repo!"
-             ls -R overlay_repo
+             echo "WARNING: No Overlay Found!"
           fi
 
-      - name: 6. Customize Pixel Props
+      - name: 6. Customize Props
         run: |
           PROP="work/mnt/system/system/build.prop"
           
@@ -82,7 +94,7 @@ jobs:
           echo "persist.sys.pixelprops.photos=true" | sudo tee -a $PROP
           echo "persist.sys.pixelprops.games=true" | sudo tee -a $PROP
           
-          # Fixes
+          # M34 Fixes
           echo "persist.dbg.ims_volte_enable=1" | sudo tee -a $PROP
           echo "persist.sys.phh.ims.volte=true" | sudo tee -a $PROP
           echo "persist.sys.fuse.passthrough.enable=true" | sudo tee -a $PROP
